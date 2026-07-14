@@ -1,0 +1,246 @@
+{
+  "network": "sepolia",
+  "chainId": "11155111",
+  "contractAddress": "0xBeF263D7CFbe67249230F65045180Ef3Cd52E8cf",
+  "deployerAddress": "0x0e0DAd1513Dc98df2b595eF9B0C7496575bCc140",
+  "transactionHash": "0xcd5570ca93a7bb38d4abdcd653811b1107ba4f0e9a4426ab43d887fb90375a73",
+  "blockNumber": 9449764,
+  "gasUsed": "1417546",
+  "deploymentTime": "2025-10-20T04:02:24.504Z",
+  "contractABI": [
+    {
+      "type": "event",
+      "anonymous": false,
+      "name": "AccessApproved",
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "fileHash",
+          "indexed": true
+        },
+        {
+          "type": "address",
+          "name": "requester",
+          "indexed": true
+        },
+        {
+          "type": "string",
+          "name": "encryptedKeyRef",
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "anonymous": false,
+      "name": "AccessRequested",
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "fileHash",
+          "indexed": true
+        },
+        {
+          "type": "address",
+          "name": "requester",
+          "indexed": true
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "anonymous": false,
+      "name": "FileUploaded",
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "hash",
+          "indexed": true
+        },
+        {
+          "type": "address",
+          "name": "owner",
+          "indexed": true
+        },
+        {
+          "type": "string",
+          "name": "meta",
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "approveAccess",
+      "constant": false,
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "fileHash"
+        },
+        {
+          "type": "address",
+          "name": "requester"
+        },
+        {
+          "type": "string",
+          "name": "encryptedKeyRef"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "function",
+      "name": "files",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": ""
+        }
+      ],
+      "outputs": [
+        {
+          "type": "address",
+          "name": "owner"
+        },
+        {
+          "type": "string",
+          "name": "meta"
+        },
+        {
+          "type": "string",
+          "name": "encryptedKeyRef"
+        },
+        {
+          "type": "bool",
+          "name": "exists"
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "getFileInfo",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "fileHash"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "tuple",
+          "name": "",
+          "components": [
+            {
+              "type": "address",
+              "name": "owner"
+            },
+            {
+              "type": "string",
+              "name": "meta"
+            },
+            {
+              "type": "string",
+              "name": "encryptedKeyRef"
+            },
+            {
+              "type": "bool",
+              "name": "exists"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "hasAccess",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "fileHash"
+        },
+        {
+          "type": "address",
+          "name": "user"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "bool",
+          "name": ""
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "requestAccess",
+      "constant": false,
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "fileHash"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "function",
+      "name": "requests",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": ""
+        },
+        {
+          "type": "address",
+          "name": ""
+        }
+      ],
+      "outputs": [
+        {
+          "type": "address",
+          "name": "requester"
+        },
+        {
+          "type": "bool",
+          "name": "approved"
+        },
+        {
+          "type": "bool",
+          "name": "exists"
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "upload",
+      "constant": false,
+      "payable": false,
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "hash"
+        },
+        {
+          "type": "string",
+          "name": "meta"
+        }
+      ],
+      "outputs": []
+    }
+  ]
+}

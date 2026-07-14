@@ -1,0 +1,33 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.env
+*.env
+.env.*
+# Node
+node_modules/
+# Artifacts
+dist/
+build/
+coverage.xml
+.coverage
+htmlcov/
+# IDE
+.vscode/
+.idea/
+# OS
+.DS_Store
+Thumbs.db
+
+.next/
+
+# Keys
+*.pem
+*.key
+
+# Runtime data (uploaded/encrypted files)
+backend/data/
+
+# Deployment secrets (use .env.example as template)
+blockchain/deployments/*.json

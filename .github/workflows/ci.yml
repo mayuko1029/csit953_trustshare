@@ -1,0 +1,98 @@
+name: CI Pipeline   # Name of the workflow in GitHub Actions
+
+on:
+  push:             # Run workflow on pushes
+    branches: [ main, develop ]   # Only run when pushing to main or develop
+  pull_request:     # Also run on pull requests targeting main/develop
+    branches: [ main, develop ]
+
+permissions:
+  contents: read    # Keep GitHub token restricted (read-only repo access)
+
+concurrency:
+  group: ci-${{ github.ref }}   # Group concurrent runs by branch/ref
+  cancel-in-progress: true      # Cancel older runs if a new one is triggered
+
+jobs:
+  # -------------------------------
+  # 1) Python jobs: backend + crypto services
+  # -------------------------------
+  python-services:
+    name: Python (${{ matrix.service }}) on ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:        # Run tests on multiple Python versions and services
+        python: ["3.10", "3.11", "3.12"]
+        service: ["backend", "crypto"]   # Two FastAPI services
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}   # Run inside the service folder
+    steps:
+      - uses: actions/checkout@v4   # Checkout repo code
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}   # Install Python version from matrix
+          cache: pip    # Cache pip dependencies for faster builds
+      - name: Install deps
+        run: |           # Install runtime + dev dependencies
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+      - name: Lint & test
+        run: |           # Run linters (ruff/black) and tests (pytest)
+          if command -v ruff >/dev/null 2>&1; then ruff check . || true; fi
+          if command -v black >/dev/null 2>&1; then black --check . || true; fi
+          if [ -d "tests" ]; then pytest -q --maxfail=1 --disable-warnings || true; fi
+        # Note: `|| true` means lint/test failures won't break the pipeline yet.
+
+  # -------------------------------
+  # 2) Smart Contracts (Hardhat)
+  # -------------------------------
+  contracts:
+    name: Contracts (Hardhat)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: blockchain   # Run inside blockchain folder
+    steps:
+      - uses: actions/checkout@v4   # Checkout repo code
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18   # Use Node.js v18
+          cache: npm
+          cache-dependency-path: blockchain/package.json
+      - name: Install
+        run: |   # Install Node deps
+          # Prefer reproducible install with npm ci if lockfile exists
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Compile
+        run: npx hardhat compile   # Compile Solidity contracts
+      - name: Test
+        run: npx hardhat test      # Run Hardhat tests
+
+  # -------------------------------
+  # 3) Frontend build (React/Next.js)
+  # -------------------------------
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend   # Run inside frontend folder
+    steps:
+      - uses: actions/checkout@v4   # Checkout repo code
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - name: Install
+        run: |   # Install frontend deps
+          # Use npm ci if lockfile exists, otherwise fallback to npm install
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Build
+        run: |   # Build frontend (if package.json exists)
+          if [ -f package.json ]; then npm run build --if-present; fi

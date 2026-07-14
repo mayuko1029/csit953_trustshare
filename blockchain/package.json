@@ -1,0 +1,22 @@
+{
+  "name": "trustshare-contracts",
+  "private": true,
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^17.2.3",
+    "hardhat": "^2.22.5",
+    "solhint": "^3.6.2"
+  },
+  "scripts": {
+    "node": "hardhat node",
+    "compile": "hardhat compile", 
+    "test": "hardhat test",
+    "lint": "npx solhint 'contracts/**/*.sol'",
+    "ci": "npm run compile && npm test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia", 
+    "deploy:goerli": "hardhat run scripts/deploy.js --network goerli",
+    "verify:sepolia": "hardhat verify --network sepolia",
+    "verify:goerli": "hardhat verify --network goerli"
+  }
+}

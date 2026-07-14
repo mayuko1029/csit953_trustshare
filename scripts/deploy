@@ -1,0 +1,26 @@
+const fs = require("fs");
+const path = require("path");
+
+async function main() {
+  const FileRegistry = await ethers.getContractFactory("FileRegistry");
+  const fileRegistry = await FileRegistry.deploy();
+  await fileRegistry.waitForDeployment();
+
+  const address = await fileRegistry.getAddress();
+  console.log("✅ FileRegistry deployed to:", address);
+
+  // Save contract details for frontend/backend
+  const data = {
+    address: address,
+    abi: JSON.parse(fileRegistry.interface.formatJson())
+  };
+
+  const outputPath = path.join(__dirname, "../artifacts/deployment.json");
+  fs.writeFileSync(outputPath, JSON.stringify(data, null, 2));
+  console.log("📝 Deployment info saved to artifacts/deployment.json");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
