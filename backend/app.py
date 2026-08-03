@@ -23,12 +23,20 @@ load_dotenv(env_path)
 print(f"Loading .env from: {env_path}")
 
 
-# Load deployer address from blockchain/deployments/sepolia.json
+# Load deployer address from blockchain/deployments/sepolia.json (optional in mock mode)
 DEPLOY_PATH = current_dir.parent / "blockchain" / "deployments" / "sepolia.json"
-with open(DEPLOY_PATH) as f:
-    deploy_info = json.load(f)
-    SYSTEM_ADDRESS = deploy_info.get("deployerAddress")
-
+MOCK_BLOCKCHAIN = os.getenv("MOCK_BLOCKCHAIN", "false").lower() == "true"
+if DEPLOY_PATH.exists():
+    with open(DEPLOY_PATH) as f:
+        deploy_info = json.load(f)
+        SYSTEM_ADDRESS = deploy_info.get("deployerAddress")
+else:
+    SYSTEM_ADDRESS = os.getenv("SYSTEM_ADDRESS", "0x0000000000000000000000000000000000000001")
+    if not MOCK_BLOCKCHAIN:
+        logger.warning(
+            "sepolia.json not found — using SYSTEM_ADDRESS=%s (set MOCK_BLOCKCHAIN=true for local demo)",
+            SYSTEM_ADDRESS,
+        )
 # Import blockchain API client AFTER environment variables are loaded
 from blockchain_api_client import blockchain_integrator
 
@@ -114,6 +122,15 @@ async def upload_file(user_id: str = Header(..., alias="User-ID"), file: UploadF
         logger.info(f"✅ File upload recorded on blockchain: {fid} by {SYSTEM_ADDRESS} (user_id={user_id})")
 
     tx_hash = blockchain_res.get("tx_hash")
+    # Persist tx hash into local metadata for Verify UI (especially mock mode)
+    try:
+        metadata["tx_hash"] = tx_hash
+        meta_path = STORAGE_PATH / f"{fid}.meta.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to persist tx_hash into metadata for {fid}: {e}")
+
     return {
         "file_id": fid,
         "tx_hash": tx_hash,
@@ -182,7 +199,7 @@ async def request_access(request: dict):
     Also creates and saves a human-friendly metadata record for UI/audit.
     """
     file_id = request["file_id"]
-    requester = request.get("requester", "")
+    requester = request.get("requester") or "alice"
     public_key = TEST_RECIPIENT_PUBKEY  # Always use stored key for prototype
     timestamp = time.time()
     approval_status = "pending"
@@ -241,14 +258,59 @@ from typing import List
 @app.get("/api/access/pending")
 async def get_pending_access_requests():
     """
-    List all pending access requests by scanning local metadata files.
-    Returns: { requests: [ { file_id, requester, request_id, ... } ] }
+    List pending access requests.
+    Mock mode: scan local *_access_*.meta.json files.
+    Real mode: query blockchain API.
     """
-    """
-    Now fetches the latest 5 pending access requests from the blockchain API.
-    Assumes the blockchain API provides an endpoint /api/blockchain/access-requests/pending
-    that returns a list of pending requests with file_id, requester, and timestamp fields.
-    """
+    if MOCK_BLOCKCHAIN:
+        try:
+            requests = []
+            for meta_path in STORAGE_PATH.glob("*_access_*.meta.json"):
+                # Skip legacy empty-requester files like {id}_access_.meta.json when a named one exists
+                stem = meta_path.name.replace(".meta.json", "")
+                if stem.endswith("_access_") or stem.endswith("_access"):
+                    continue
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to read {meta_path}: {e}")
+                    continue
+                if meta.get("approval_status", "pending") != "pending":
+                    continue
+                file_id = meta.get("file_id")
+                requester = meta.get("user_id") or meta.get("requester") or "alice"
+                if not requester:
+                    continue
+                if not file_id:
+                    # Derive from filename: {file_id}_access_{requester}.meta.json
+                    parts = stem.split("_access_", 1)
+                    file_id = parts[0] if parts else stem
+                request_id = f"{file_id}_{requester}"
+                requests.append({
+                    "file_id": file_id,
+                    "requester": requester,
+                    "request_id": request_id,
+                    "file_name": meta.get("file_name"),
+                    "timestamp": meta.get("timestamp"),
+                })
+            # Dedupe by request_id
+            seen = set()
+            unique = []
+            for r in requests:
+                if r["request_id"] in seen:
+                    continue
+                seen.add(r["request_id"])
+                unique.append(r)
+            requests = unique
+            # Newest first
+            requests.sort(key=lambda r: r.get("timestamp") or 0, reverse=True)
+            logger.info(f"🎭 MOCK: Returning {len(requests)} pending access request(s) from local storage")
+            return {"requests": requests[:20]}
+        except Exception as e:
+            logger.error(f"Failed to list local pending requests: {e}")
+            raise HTTPException(status_code=500, detail="Failed to fetch pending requests")
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             res = await client.get(f"{BLOCKCHAIN_URL}/api/blockchain/access-requests/pending?limit=5")
@@ -265,6 +327,8 @@ async def get_pending_access_requests():
                 request_id = f"{file_id}_{requester}"
                 requests.append({"file_id": file_id, "requester": requester, "request_id": request_id})
         return {"requests": requests}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch pending requests from blockchain API: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch pending requests from blockchain API")
@@ -279,24 +343,42 @@ async def approve_access(request: dict):
     """
     # 1. Extract request data
     file_id = request["file_id"]
-    requester = request.get("requester", "")
+    requester = request.get("requester") or "alice"
     if not requester:
         logger.error("Missing requester in approval request")
         raise HTTPException(status_code=422, detail="Missing required field: requester")
 
-    # Fetch the requester's public key from the blockchain record (authoritative)
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        access_req_res = await client.get(f"{BLOCKCHAIN_URL}/api/blockchain/access-request/{file_id}/{requester}")
-    if access_req_res.status_code != 200:
-        logger.error(f"Access request not found on blockchain for file_id={file_id}, requester={requester}")
-        raise HTTPException(status_code=404, detail="Access request not found on blockchain")
+    # Fetch the requester's public key (mock: local meta / TEST_RECIPIENT_PUBKEY)
+    requester_public_key = None
+    if MOCK_BLOCKCHAIN:
+        access_meta_path = STORAGE_PATH / f"{file_id}_access_{requester}.meta.json"
+        # Also try legacy empty-requester filename
+        legacy_path = STORAGE_PATH / f"{file_id}_access_.meta.json"
+        for path in (access_meta_path, legacy_path):
+            if path.exists():
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        access_meta = json.load(f)
+                    requester_public_key = access_meta.get("public_key")
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to read {path}: {e}")
+        if not requester_public_key:
+            requester_public_key = TEST_RECIPIENT_PUBKEY
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            access_req_res = await client.get(f"{BLOCKCHAIN_URL}/api/blockchain/access-request/{file_id}/{requester}")
+        if access_req_res.status_code != 200:
+            logger.error(f"Access request not found on blockchain for file_id={file_id}, requester={requester}")
+            raise HTTPException(status_code=404, detail="Access request not found on blockchain")
 
-    access_req_json = access_req_res.json()
-    logger.info(f"[DEBUG] Blockchain access-request response for file_id={file_id}, requester={requester}: {access_req_json}")
-    requester_public_key = access_req_json.get("public_key")
+        access_req_json = access_req_res.json()
+        logger.info(f"[DEBUG] Blockchain access-request response for file_id={file_id}, requester={requester}: {access_req_json}")
+        requester_public_key = access_req_json.get("public_key")
+
     if not requester_public_key:
-        logger.error(f"No public key found in blockchain access request record for file_id={file_id}, requester={requester}. Response: {access_req_json}")
-        raise HTTPException(status_code=422, detail="No public key found in blockchain access request record")
+        logger.error(f"No public key found for file_id={file_id}, requester={requester}")
+        raise HTTPException(status_code=422, detail="No public key found in access request record")
 
     try:
         # 2. Retrieve the file encryption key (for demo, use a fixed key; in production, fetch the real key)
@@ -330,6 +412,22 @@ async def approve_access(request: dict):
             # If in mock mode, simulate the blockchain approval
             result = await mock_blockchain_record("access_approval", file_id, SYSTEM_ADDRESS, approval_meta)
             logger.info(f"🎭 MOCK: Access approval simulated for {file_id} -> {SYSTEM_ADDRESS} (requester={requester})")
+            # Mark local access request as approved
+            for path in (
+                STORAGE_PATH / f"{file_id}_access_{requester}.meta.json",
+                STORAGE_PATH / f"{file_id}_access_.meta.json",
+            ):
+                if path.exists():
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            access_meta = json.load(f)
+                        access_meta["approval_status"] = "approved"
+                        access_meta["key_reference"] = key_ref
+                        access_meta["approval_tx_hash"] = result.get("tx_hash")
+                        with open(path, "w", encoding="utf-8") as f:
+                            json.dump(access_meta, f, indent=2)
+                    except Exception as e:
+                        logger.warning(f"Failed to update approval status on {path}: {e}")
         else:
             # Actually record the approval on the blockchain
             result = await blockchain_integrator.approve_file_access(file_id, SYSTEM_ADDRESS, key_ref, approval_meta)
@@ -343,6 +441,8 @@ async def approve_access(request: dict):
             "requester": requester,
             "key_reference": key_ref
         }
+    except HTTPException:
+        raise
     except Exception as e:
         # 7. Handle and log any errors
         logger.error(f"Failed to record access approval on blockchain: {e}")
@@ -419,9 +519,42 @@ async def approve_access(request: dict):
 async def get_file_info(file_id: str):
     """
     Retrieve file information from blockchain and verify its digital signature using Crypto service.
-    If the signature is valid and access is approved, unwrap (decrypt) the AES key using recipient's private key.
-    Uses SYSTEM_ADDRESS as user_address for blockchain access check.
+    Mock mode: return local metadata so Verify UI works without blockchain API.
     """
+    if MOCK_BLOCKCHAIN:
+        meta_path = STORAGE_PATH / f"{file_id}.meta.json"
+        if not meta_path.exists():
+            raise HTTPException(status_code=404, detail="File not found in local storage (mock mode)")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read metadata for {file_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read local file metadata")
+
+        hash_obj = meta.get("hash") or {}
+        sig_obj = meta.get("signature") or {}
+        file_hash = hash_obj.get("valueB64") if isinstance(hash_obj, dict) else hash_obj
+        signature = sig_obj.get("signatureB64") if isinstance(sig_obj, dict) else sig_obj
+        tx_hash = meta.get("tx_hash")
+
+        logger.info(f"🎭 MOCK: Returning local verify payload for {file_id}")
+        return {
+            "file_id": file_id,
+            "file_name": meta.get("file_name"),
+            "owner": meta.get("user_id"),
+            "user_id": meta.get("user_id"),
+            "file_hash": file_hash,
+            "hash": file_hash,
+            "signature": signature,
+            "sig": signature,
+            "tx_hash": tx_hash,
+            "timestamp": meta.get("timestamp"),
+            "verification_result": "valid",
+            "mock": True,
+            "message": "Mock verification from local encrypted metadata (AES-GCM + ECDSA recorded at upload)",
+        }
+
     try:
         # -----------------------------------------------------------
         # Retrieve file info from Blockchain microservice (real mode)

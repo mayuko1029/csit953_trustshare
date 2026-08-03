@@ -15,6 +15,11 @@ import {
   Download,
   ArrowRight,
   X,
+  ExternalLink,
+  Lock,
+  PenLine,
+  Database,
+  Link2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,6 +44,20 @@ const FLOW_STEPS = [
   { id: "verify", label: "Download & verify" },
 ] as const
 
+const UPLOAD_PIPELINE = [
+  { id: "encrypt", label: "Encrypt", detail: "AES-256-GCM", icon: Lock },
+  { id: "sign", label: "Sign", detail: "ECDSA", icon: PenLine },
+  { id: "store", label: "Store", detail: "Encrypted blob", icon: Database },
+  { id: "log", label: "Log", detail: "Sepolia chain", icon: Link2 },
+] as const
+
+const SEPOLIA_TX = "https://sepolia.etherscan.io/tx/"
+
+function etherscanTxUrl(hash: string) {
+  const clean = hash.startsWith("0x") ? hash : `0x${hash}`
+  return `${SEPOLIA_TX}${clean}`
+}
+
 function extractError(err: any, fallback: string): string {
   const data = err?.response?.data
   if (!data) return err?.message || fallback
@@ -55,10 +74,12 @@ function ResultRow({
   label,
   value,
   onCopy,
+  href,
 }: {
   label: string
   value: string
   onCopy?: () => void
+  href?: string
 }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-xl bg-white p-3 border border-slate-200">
@@ -66,12 +87,109 @@ function ResultRow({
         <p className="text-xs font-medium text-slate-500 mb-1">{label}</p>
         <p className="text-sm font-mono text-slate-900 break-all">{value}</p>
       </div>
-      {onCopy && (
-        <Button variant="ghost" size="sm" onClick={onCopy} className="shrink-0" type="button">
-          <Copy className="w-4 h-4" />
-        </Button>
-      )}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center rounded-xl p-2 text-blue-600 hover:bg-blue-50"
+            title="Open on Etherscan"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        )}
+        {onCopy && (
+          <Button variant="ghost" size="sm" onClick={onCopy} className="shrink-0" type="button">
+            <Copy className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
     </div>
+  )
+}
+
+function PipelineSteps({
+  activeIndex,
+  complete,
+}: {
+  activeIndex: number
+  complete: boolean
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+        Security pipeline
+      </p>
+      <ol className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {UPLOAD_PIPELINE.map((step, i) => {
+          const Icon = step.icon
+          const done = complete || i < activeIndex
+          const current = !complete && i === activeIndex
+          return (
+            <li
+              key={step.id}
+              className={cn(
+                "rounded-xl border px-3 py-3 text-center transition-colors",
+                done
+                  ? "border-green-200 bg-green-50"
+                  : current
+                    ? "border-blue-300 bg-blue-50"
+                    : "border-slate-200 bg-white"
+              )}
+            >
+              <div
+                className={cn(
+                  "mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-lg",
+                  done
+                    ? "bg-green-600 text-white"
+                    : current
+                      ? "bg-blue-600 text-white"
+                      : "bg-slate-100 text-slate-400"
+                )}
+              >
+                {done ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+              </div>
+              <p
+                className={cn(
+                  "text-xs font-semibold",
+                  done ? "text-green-800" : current ? "text-blue-800" : "text-slate-500"
+                )}
+              >
+                {step.label}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">{step.detail}</p>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+function StatusBadge({
+  ok,
+  label,
+}: {
+  ok: boolean
+  label: string
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border",
+        ok
+          ? "bg-green-50 text-green-800 border-green-200"
+          : "bg-slate-100 text-slate-500 border-slate-200"
+      )}
+    >
+      {ok ? (
+        <CheckCircle2 className="h-3.5 w-3.5" />
+      ) : (
+        <AlertCircle className="h-3.5 w-3.5" />
+      )}
+      {label}
+    </span>
   )
 }
 
@@ -195,6 +313,8 @@ export default function TrustShareApp() {
   const [accessLoading, setAccessLoading] = useState(false)
   const [approvalsLoading, setApprovalsLoading] = useState(false)
   const [downloadLoading, setDownloadLoading] = useState(false)
+  const [pipelineIndex, setPipelineIndex] = useState(0)
+  const [pipelineComplete, setPipelineComplete] = useState(false)
 
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -225,11 +345,23 @@ export default function TrustShareApp() {
     const formData = new FormData()
     formData.append("file", file)
     setUploadLoading(true)
+    setUploadResult(null)
+    setPipelineComplete(false)
+    setPipelineIndex(0)
     clearAlerts()
+
+    // Visual progress while the backend runs encrypt → sign → store → log
+    const timers = [0, 1, 2].map((i) =>
+      window.setTimeout(() => setPipelineIndex(i + 1), 450 * (i + 1))
+    )
+
     try {
       const res = await axios.post(`${API_BASE}/api/file/upload`, formData, {
         headers: { "User-ID": userId },
       })
+      timers.forEach(clearTimeout)
+      setPipelineIndex(UPLOAD_PIPELINE.length - 1)
+      setPipelineComplete(true)
       setUploadResult(res.data)
       setSuccess("File uploaded and recorded on blockchain successfully!")
       if (res.data?.file_id) {
@@ -237,6 +369,8 @@ export default function TrustShareApp() {
         setDownloadFileId(res.data.file_id)
       }
     } catch (err: any) {
+      timers.forEach(clearTimeout)
+      setPipelineComplete(false)
       setError(extractError(err, "Upload failed"))
     } finally {
       setUploadLoading(false)
@@ -331,8 +465,9 @@ export default function TrustShareApp() {
         </div>
 
         <AnimatePresence mode="wait">
-          {error && (
+          {error ? (
             <motion.div
+              key="alert-error"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -343,9 +478,9 @@ export default function TrustShareApp() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             </motion.div>
-          )}
-          {success && (
+          ) : success ? (
             <motion.div
+              key="alert-success"
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -356,7 +491,7 @@ export default function TrustShareApp() {
                 <AlertDescription>{success}</AlertDescription>
               </Alert>
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
 
         {/* Tabs */}
@@ -411,6 +546,13 @@ export default function TrustShareApp() {
 
                 <FileDropZone file={file} onFile={setFile} />
 
+                {(uploadLoading || pipelineComplete || uploadResult) && (
+                  <PipelineSteps
+                    activeIndex={pipelineIndex}
+                    complete={pipelineComplete}
+                  />
+                )}
+
                 <Button
                   onClick={handleUpload}
                   disabled={uploadLoading || !file || !userId}
@@ -432,6 +574,7 @@ export default function TrustShareApp() {
                 <AnimatePresence>
                   {uploadResult && (
                     <motion.div
+                      key="upload-result"
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
@@ -439,9 +582,10 @@ export default function TrustShareApp() {
                     >
                       <Separator />
                       <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2 text-green-900 font-semibold">
+                        <div className="flex flex-wrap items-center gap-2 text-green-900 font-semibold">
                           <CheckCircle2 className="w-5 h-5 text-green-600" />
                           Upload successful
+                          <StatusBadge ok label="On-chain logged" />
                         </div>
                         {uploadResult.file_id && (
                           <ResultRow
@@ -455,7 +599,19 @@ export default function TrustShareApp() {
                             label="Transaction Hash"
                             value={uploadResult.tx_hash}
                             onCopy={() => copyToClipboard(uploadResult.tx_hash)}
+                            href={etherscanTxUrl(uploadResult.tx_hash)}
                           />
+                        )}
+                        {uploadResult.tx_hash && (
+                          <a
+                            href={etherscanTxUrl(uploadResult.tx_hash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                          >
+                            View on Sepolia Etherscan
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
                         )}
                         <Button variant="outline" className="w-full" onClick={() => goToTab("access")}>
                           Next: Request access
@@ -509,6 +665,7 @@ export default function TrustShareApp() {
                 <AnimatePresence>
                   {metadata?.files && (
                     <motion.div
+                      key="lookup-result"
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
@@ -520,7 +677,7 @@ export default function TrustShareApp() {
                       ) : (
                         metadata.files.map((meta: any, idx: number) => (
                           <div
-                            key={meta.file_id || idx}
+                            key={`${meta.file_id || "file"}-${idx}`}
                             className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2"
                           >
                             <div className="flex items-center gap-2 font-semibold text-slate-900">
@@ -654,9 +811,9 @@ export default function TrustShareApp() {
                     No pending requests loaded yet.
                   </p>
                 ) : (
-                  approvalRequests.map((req) => (
+                  approvalRequests.map((req, idx) => (
                     <div
-                      key={req.request_id || `${req.file_id}-${req.requester}`}
+                      key={req.request_id || `${req.file_id}-${req.requester}-${idx}`}
                       className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
                       <div className="min-w-0 space-y-1">
@@ -741,57 +898,84 @@ export default function TrustShareApp() {
                   {downloadLoading ? "Verifying..." : "Download & Verify"}
                 </Button>
 
-                {downloadResult && (
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">
-                    <div className="flex items-center gap-2 font-semibold text-blue-950">
-                      <Shield className="w-5 h-5 text-blue-600" />
-                      Verification summary
-                    </div>
-                    {downloadResult.file_id && (
-                      <ResultRow label="File ID" value={String(downloadResult.file_id)} />
-                    )}
-                    {(downloadResult.file_hash || downloadResult.hash) && (
-                      <ResultRow
-                        label="File Hash"
-                        value={String(downloadResult.file_hash || downloadResult.hash)}
-                        onCopy={() =>
-                          copyToClipboard(String(downloadResult.file_hash || downloadResult.hash))
-                        }
-                      />
-                    )}
-                    {(downloadResult.signature || downloadResult.sig) && (
-                      <ResultRow
-                        label="Signature"
-                        value={String(downloadResult.signature || downloadResult.sig)}
-                        onCopy={() =>
-                          copyToClipboard(String(downloadResult.signature || downloadResult.sig))
-                        }
-                      />
-                    )}
-                    {(downloadResult.tx_hash || downloadResult.transaction_hash) && (
-                      <ResultRow
-                        label="Transaction Hash"
-                        value={String(downloadResult.tx_hash || downloadResult.transaction_hash)}
-                        onCopy={() =>
-                          copyToClipboard(
-                            String(downloadResult.tx_hash || downloadResult.transaction_hash)
-                          )
-                        }
-                      />
-                    )}
-                    {(downloadResult.owner || downloadResult.user_id) && (
-                      <ResultRow
-                        label="Owner"
-                        value={String(downloadResult.owner || downloadResult.user_id)}
-                      />
-                    )}
-                    {!downloadResult.file_hash &&
-                      !downloadResult.hash &&
-                      !downloadResult.signature &&
-                      !downloadResult.sig &&
-                      !downloadResult.tx_hash && (
+                {downloadResult && (() => {
+                  const fileHash = downloadResult.file_hash || downloadResult.hash
+                  const signature = downloadResult.signature || downloadResult.sig
+                  const txHash =
+                    downloadResult.tx_hash || downloadResult.transaction_hash
+                  const hasHash = Boolean(fileHash)
+                  const hasSig = Boolean(signature)
+                  const hasTx = Boolean(txHash)
+                  const verified = hasHash || hasSig || hasTx
+
+                  return (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 font-semibold text-blue-950">
+                          <Shield className="w-5 h-5 text-blue-600" />
+                          Verification summary
+                        </div>
+                        {verified && (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1 text-xs font-semibold text-white shadow-sm">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Verified
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <StatusBadge ok={hasHash} label="Hash recorded" />
+                        <StatusBadge ok={hasSig} label="Signature present" />
+                        <StatusBadge ok={hasTx} label="On-chain log" />
+                      </div>
+
+                      {downloadResult.file_id && (
+                        <ResultRow label="File ID" value={String(downloadResult.file_id)} />
+                      )}
+                      {hasHash && (
+                        <ResultRow
+                          label="File Hash"
+                          value={String(fileHash)}
+                          onCopy={() => copyToClipboard(String(fileHash))}
+                        />
+                      )}
+                      {hasSig && (
+                        <ResultRow
+                          label="Signature"
+                          value={String(signature)}
+                          onCopy={() => copyToClipboard(String(signature))}
+                        />
+                      )}
+                      {hasTx && (
+                        <>
+                          <ResultRow
+                            label="Transaction Hash"
+                            value={String(txHash)}
+                            onCopy={() => copyToClipboard(String(txHash))}
+                            href={etherscanTxUrl(String(txHash))}
+                          />
+                          <a
+                            href={etherscanTxUrl(String(txHash))}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors bg-white"
+                          >
+                            View on Sepolia Etherscan
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </>
+                      )}
+                      {(downloadResult.owner || downloadResult.user_id) && (
+                        <ResultRow
+                          label="Owner"
+                          value={String(downloadResult.owner || downloadResult.user_id)}
+                        />
+                      )}
+                      {!hasHash && !hasSig && !hasTx && (
                         <div className="space-y-2">
-                          {Object.entries(downloadResult).map(([key, value]) => (
+                          {Object.entries(downloadResult)
+                            .filter(([key]) => key)
+                            .map(([key, value]) => (
                             <ResultRow
                               key={key}
                               label={key}
@@ -804,8 +988,9 @@ export default function TrustShareApp() {
                           ))}
                         </div>
                       )}
-                  </div>
-                )}
+                    </div>
+                  )
+                })()}
               </CardContent>
             </Card>
           </div>

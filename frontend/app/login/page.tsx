@@ -35,14 +35,24 @@ export default function LoginPage() {
         password,
       })
 
-      const token = res.data.token
+      // Backend returns { access_token, token_type }
+      const token = res.data.access_token || res.data.token
+      if (!token) {
+        setError("Login succeeded but no token was returned.")
+        return
+      }
       localStorage.setItem("jwt", token)
       setSuccess("Login successful!")
       setTimeout(() => {
         router.push("/")
       }, 800)
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Login failed. Please check your credentials.")
+      const detail = err.response?.data?.detail
+      if (!err.response) {
+        setError("Cannot reach backend at " + API_BASE + ". Is it running on port 8000?")
+      } else {
+        setError(detail || "Login failed. Please check your credentials.")
+      }
     } finally {
       setLoading(false)
     }
@@ -94,8 +104,12 @@ export default function LoginPage() {
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleLogin()
+              }}
               className="h-11"
             />
+            <p className="text-xs text-slate-400">Demo: alice / 1234</p>
             <Button
               onClick={handleLogin}
               disabled={loading || !username || !password}
