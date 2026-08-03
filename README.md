@@ -19,6 +19,26 @@ As the **Backend & Security Architecture Developer**, I engineered the core oper
 
 ---
 
+## ✨ Enhancements beyond the original group project
+
+Portfolio-oriented updates built on top of the university group deliverable (same security core; clearer demo UX and local mock flow).
+
+### UI / UX
+* Reorganised the single long form into a guided tab flow: **Upload → Lookup → Access → Verify**
+* Added **drag-and-drop** file upload and clearer success / error states
+* Visualised the **security pipeline** (Encrypt → Sign → Store → Log on Sepolia)
+* Added **Verified** status badges and **Sepolia Etherscan** links for transaction hashes
+* Refined the frontend look (typography, sticky nav, responsive layout) while keeping the original blue TrustShare style
+
+### Backend / demo experience
+* Improved **mock mode** so Access pending list and Download & Verify work from local metadata (no blockchain API required for portfolio demos)
+* Fixed login token handling (`access_token`) for the demo credentials flow (`alice` / `1234`)
+* Stabilised frontend runtime issues (hydration / duplicate React keys) for a smoother walkthrough
+
+> Set `MOCK_BLOCKCHAIN=true` for local UI demos. Set `MOCK_BLOCKCHAIN=false` with Sepolia + blockchain API configured for real on-chain logging.
+
+---
+
 ## 🏗️ System Architecture & Tech Stack
 
 The platform is structured into separate microservices to maintain strict isolation of cryptographic keys and data flows:
