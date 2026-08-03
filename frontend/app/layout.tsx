@@ -1,36 +1,29 @@
-// Import global CSS styles that apply to the entire application
-import './globals.css'   
+import type { Metadata } from "next"
+import { Outfit, Plus_Jakarta_Sans } from "next/font/google"
+import "./globals.css"
 
-// Metadata for the application - this appears in browser tab and search engines
-export const metadata = {
-  title: 'TrustShare - Secure File Storage',  // Updated for TrustShare project
-  description: 'Secure cloud-based file storage with AES-GCM encryption and blockchain logging',
+const display = Outfit({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["500", "600", "700"],
+})
+
+const body = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-body",
+  weight: ["400", "500", "600"],
+})
+
+export const metadata: Metadata = {
+  title: "TrustShare — Secure File Storage",
+  description:
+    "Secure cloud-based file storage with AES-GCM encryption, ECDSA signatures, and blockchain logging",
 }
 
-/**
- * RootLayout Component
- * 
- * This is the main layout wrapper for the entire Next.js application.
- * Every page in the app will be wrapped with this layout.
- * 
- * Features:
- * - Provides the basic HTML structure (html, body tags)
- * - Sets up global styles
- * - Contains all child components/pages
- * 
- * @param children - React components that will be rendered inside this layout
- */
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>
-        {/* All page content will be rendered here */}
-        {children}
-      </body>
+    <html lang="en" className={`${display.variable} ${body.variable}`}>
+      <body>{children}</body>
     </html>
   )
 }

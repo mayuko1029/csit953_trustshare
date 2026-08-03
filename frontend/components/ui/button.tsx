@@ -1,31 +1,22 @@
-// Client-side component directive
 "use client"
 
 import * as React from "react"
-
-/**
- * Custom Button Component
- * 
- * A reusable button component with consistent styling across the app.
- * Uses Tailwind CSS classes for styling and supports all standard button props.
- * 
- * Features:
- * - Multiple variants (default, outline, ghost)
- * - Multiple sizes (default, sm, lg)
- * - Smooth transitions
- * - Accepts all standard HTML button attributes
- * - Allows custom className overrides
- */
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "outline" | "ghost"
   size?: "default" | "sm" | "lg"
 }
 
-export function Button({ children, variant = "default", size = "default", className, ...props }: ButtonProps) {
-  let baseClasses = "rounded-xl transition-colors font-medium"
-  
-  // Size variants
+export function Button({
+  children,
+  variant = "default",
+  size = "default",
+  className,
+  ...props
+}: ButtonProps) {
+  let baseClasses =
+    "inline-flex items-center justify-center rounded-xl transition-colors font-medium disabled:opacity-50 disabled:pointer-events-none"
+
   if (size === "sm") {
     baseClasses += " px-3 py-1.5 text-sm"
   } else if (size === "lg") {
@@ -33,24 +24,20 @@ export function Button({ children, variant = "default", size = "default", classN
   } else {
     baseClasses += " px-4 py-2"
   }
-  
-  // Variant styles
+
   let variantClasses = ""
   if (variant === "outline") {
-    variantClasses = "border-2 border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
+    variantClasses =
+      "border-2 border-blue-600 text-blue-700 hover:bg-blue-50 bg-transparent"
   } else if (variant === "ghost") {
-    variantClasses = "text-gray-600 hover:bg-gray-100 bg-transparent"
+    variantClasses = "text-slate-600 hover:bg-slate-100 bg-transparent"
   } else {
-    variantClasses = "bg-blue-600 text-white hover:bg-blue-700"
+    variantClasses =
+      "bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-700 hover:to-cyan-700 shadow-md shadow-blue-600/20"
   }
-  
-  const finalClasses = `${baseClasses} ${variantClasses} ${className || ""}`
-  
+
   return (
-    <button
-      {...props}
-      className={finalClasses}
-    >
+    <button {...props} className={`${baseClasses} ${variantClasses} ${className || ""}`}>
       {children}
     </button>
   )
